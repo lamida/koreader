@@ -39,11 +39,19 @@ describe("Calibre library db module", function()
         ]])
         conn:close()
 
-        -- Create the actual files for book 1 (EPUB) so resolveBookPath can find it.
-        local book_dir = dir .. "/Jane Roe/Alpha (1)"
+        -- Book 1: file name matches data.name (exact resolution).
+        local alpha_dir = dir .. "/Jane Roe/Alpha (1)"
         lfs.mkdir(dir .. "/Jane Roe")
-        lfs.mkdir(book_dir)
-        local fh = io.open(book_dir .. "/Alpha - Jane Roe.epub", "w")
+        lfs.mkdir(alpha_dir)
+        local fh = io.open(alpha_dir .. "/Alpha - Jane Roe.epub", "w")
+        fh:write("dummy")
+        fh:close()
+
+        -- Book 3: file name does NOT match data.name (fallback resolution).
+        local gamma_dir = dir .. "/John Doe/Gamma (3)"
+        lfs.mkdir(dir .. "/John Doe")
+        lfs.mkdir(gamma_dir)
+        fh = io.open(gamma_dir .. "/different name.pdf", "w")
         fh:write("dummy")
         fh:close()
     end
@@ -72,7 +80,7 @@ describe("Calibre library db module", function()
     end)
 
     it("lists only books with a supported format", function()
-        local books = CalibreDB:queryBooks(library_dir)
+        local books = CalibreDB:queryAllBooks(library_dir)
         assert.are.equal(3, #books) -- Delta (mobi-only) is excluded
         local titles = {}
         for _, b in ipairs(books) do
@@ -84,11 +92,13 @@ describe("Calibre library db module", function()
         assert.is_nil(titles["Delta"])
     end)
 
-    it("parses authors and formats", function()
-        local books = CalibreDB:queryBooks(library_dir, { sort_field = "title", ascending = true })
+    it("parses authors, formats and date fields", function()
+        local books = CalibreDB:sortBooks(CalibreDB:queryAllBooks(library_dir), "title", true)
         local alpha = books[1]
         assert.are.equal("Alpha", alpha.title)
         assert.are.equal("Jane Roe", alpha.authors)
+        assert.are.equal("2020-01-01", alpha.pubdate)
+        assert.are.equal("2021-01-01", alpha.timestamp)
         assert.are.equal(2, #alpha.formats)
         local formats = {}
         for _, f in ipairs(alpha.formats) do
@@ -99,42 +109,65 @@ describe("Calibre library db module", function()
     end)
 
     it("sorts by title ascending and descending", function()
-        local asc = CalibreDB:queryBooks(library_dir, { sort_field = "title", ascending = true })
+        local books = CalibreDB:queryAllBooks(library_dir)
+        local asc = CalibreDB:sortBooks(books, "title", true)
         assert.are.equal("Alpha", asc[1].title)
         assert.are.equal("Gamma", asc[3].title)
 
-        local desc = CalibreDB:queryBooks(library_dir, { sort_field = "title", ascending = false })
+        local desc = CalibreDB:sortBooks(books, "title", false)
         assert.are.equal("Gamma", desc[1].title)
         assert.are.equal("Alpha", desc[3].title)
     end)
 
     it("sorts by date added", function()
-        local books = CalibreDB:queryBooks(library_dir, { sort_field = "timestamp", ascending = true })
+        local books = CalibreDB:sortBooks(CalibreDB:queryAllBooks(library_dir), "timestamp", true)
         -- timestamps: Gamma 2020, Alpha 2021, Beta 2022
         assert.are.equal("Gamma", books[1].title)
         assert.are.equal("Alpha", books[2].title)
         assert.are.equal("Beta", books[3].title)
     end)
 
+    it("does not mutate the input list when sorting", function()
+        local books = CalibreDB:queryAllBooks(library_dir)
+        local first_before = books[1]
+        CalibreDB:sortBooks(books, "title", false)
+        assert.are.equal(first_before, books[1])
+    end)
+
     it("filters by title", function()
-        local books = CalibreDB:queryBooks(library_dir, { search_query = "Alph" })
-        assert.are.equal(1, #books)
-        assert.are.equal("Alpha", books[1].title)
+        local books = CalibreDB:queryAllBooks(library_dir)
+        local matches = CalibreDB:filterBooks(books, "Alph")
+        assert.are.equal(1, #matches)
+        assert.are.equal("Alpha", matches[1].title)
     end)
 
-    it("filters by author", function()
-        local books = CalibreDB:queryBooks(library_dir, { search_query = "John Doe" })
-        assert.are.equal(2, #books) -- Beta and Gamma
+    it("filters by author (case-insensitive)", function()
+        local books = CalibreDB:queryAllBooks(library_dir)
+        local matches = CalibreDB:filterBooks(books, "john doe")
+        assert.are.equal(2, #matches) -- Beta and Gamma
     end)
 
-    it("resolves an existing book file", function()
+    it("returns the full list for an empty filter", function()
+        local books = CalibreDB:queryAllBooks(library_dir)
+        assert.are.equal(#books, #CalibreDB:filterBooks(books, ""))
+        assert.are.equal(#books, #CalibreDB:filterBooks(books, nil))
+    end)
+
+    it("resolves a book file by its exact stored name", function()
         local path = CalibreDB:resolveBookPath(library_dir, "Jane Roe/Alpha (1)", "Alpha - Jane Roe", "EPUB")
         assert.is_not_nil(path)
         assert.is_truthy(path:match("Alpha %- Jane Roe%.epub$"))
     end)
 
-    it("returns nil for a missing book file", function()
+    it("falls back to a directory scan when the name differs", function()
+        -- data.name is "Gamma - John Doe" but the file is "different name.pdf".
+        local path = CalibreDB:resolveBookPath(library_dir, "John Doe/Gamma (3)", "Gamma - John Doe", "PDF")
+        assert.is_not_nil(path)
+        assert.is_truthy(path:match("different name%.pdf$"))
+    end)
+
+    it("returns nil when no matching file exists", function()
         local path = CalibreDB:resolveBookPath(library_dir, "Jane Roe/Alpha (1)", "Alpha - Jane Roe", "PDF")
-        assert.is_nil(path) -- only the epub was created on disk
+        assert.is_nil(path) -- only the epub exists for Alpha
     end)
 end)

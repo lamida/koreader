@@ -214,6 +214,11 @@ function CalibreLibrary:browse()
         return
     end
 
+    -- Read the whole catalog once, with feedback so a large library never looks
+    -- frozen. All later filtering/sorting works on this in-memory list.
+    self.search_query = nil
+    self.all_books = self:loadAllBooks(library_dir)
+
     self.catalog_menu = BookList:new{
         name = "calibre_catalog",
         title = _("Calibre library"),
@@ -236,19 +241,30 @@ function CalibreLibrary:browse()
     self.catalog_menu.close_callback = function()
         UIManager:close(self.catalog_menu)
         self.catalog_menu = nil
+        self.all_books = nil
     end
     self:updateCatalog()
     UIManager:show(self.catalog_menu)
 end
 
---- Re-query the catalog with the current filter / sort and refresh the list.
+--- Read the catalog from the database, showing a loading message first so the
+--- blocking read does not look like a freeze on a large library.
+function CalibreLibrary:loadAllBooks(library_dir)
+    local info = InfoMessage:new{ text = _("Loading calibre library…") }
+    UIManager:show(info)
+    UIManager:forceRePaint()
+    local books = CalibreDB:queryAllBooks(library_dir)
+    UIManager:close(info)
+    return books
+end
+
+--- Apply the current filter / sort to the in-memory catalog and refresh the
+--- list. This touches no database and no filesystem, so it is instant.
 function CalibreLibrary:updateCatalog()
     if not self.catalog_menu then return end
-    local books = CalibreDB:queryBooks(self:getLibraryDir(), {
-        search_query = self.search_query,
-        sort_field = self:getSortField(),
-        ascending = self:isSortAscending(),
-    })
+    local all_books = self.all_books or {}
+    local books = CalibreDB:filterBooks(all_books, self.search_query)
+    books = CalibreDB:sortBooks(books, self:getSortField(), self:isSortAscending())
 
     local item_table = {}
     for _, book in ipairs(books) do
@@ -258,13 +274,15 @@ function CalibreLibrary:updateCatalog()
         })
     end
 
-    local title
+    -- Show the match count in the title bar subtitle: the full catalog size
+    -- when unfiltered, the match count vs. total when a filter is active.
+    local subtitle
     if self.search_query and self.search_query ~= "" then
-        title = T(_("Calibre library: \"%1\" (%2)"), self.search_query, #item_table)
+        subtitle = T(_("%1 of %2 match \"%3\""), #books, #all_books, self.search_query)
     else
-        title = T(_("Calibre library (%1)"), #item_table)
+        subtitle = T(_("%1 books"), #all_books)
     end
-    self.catalog_menu:switchItemTable(title, item_table, -1)
+    self.catalog_menu:switchItemTable(_("Calibre library"), item_table, -1, nil, subtitle)
 end
 
 --- In-list options: filter by text and change sort order.
