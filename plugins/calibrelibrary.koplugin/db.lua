@@ -118,14 +118,17 @@ is slow: the per-book author/format subqueries do many small random reads. A
 one-off sequential copy to internal storage, then querying the copy, is far
 faster. Re-copies only when @{needsSync} reports the copy is stale.
 
+Pass `force` to re-copy even when @{needsSync} reports the copy is current
+(used by the manual "Reload library" action).
+
 @return the path to query (the cache on success, else the source as a fallback)
 --]]
-function CalibreDB:syncDatabase(library_dir, cache_path)
+function CalibreDB:syncDatabase(library_dir, cache_path, force)
     local src = self:getDBPath(library_dir)
     if not src or lfs.attributes(src, "mode") ~= "file" then
         return nil
     end
-    if not self:needsSync(library_dir, cache_path) then
+    if not force and not self:needsSync(library_dir, cache_path) then
         return cache_path
     end
     if copyFile(src, cache_path) then
