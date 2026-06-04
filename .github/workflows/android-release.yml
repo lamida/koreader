@@ -1,0 +1,118 @@
+# Build a signed Android release on GitHub's native x86_64 Linux runners.
+#
+# This is much faster and more reliable than cross-building on an Apple Silicon
+# Mac: the x86_64 NDK runs natively (no Rosetta/qemu) and the runner network can
+# reach the third-party hosts (e.g. framagit.org) that may be blocked locally.
+#
+# One-time setup (repository → Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64  base64 of your release keystore:
+#                              base64 -i ~/.keystores/koreader-release.jks | pbcopy
+#   ANDROID_KEYSTORE_PASS    keystore password
+#   ANDROID_KEY_ALIAS        key alias (e.g. koreader)
+#   ANDROID_KEY_PASS         key password
+#
+# Run it from the Actions tab (workflow_dispatch); download the APK from the run
+# artifacts.
+
+name: android-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Android ABI target
+        default: android-arm64
+        type: choice
+        options:
+          - android-arm64
+          - android-arm
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: "Android release (${{ inputs.target }})"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so `git describe` can derive a version name from tags.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake build-essential ca-certificates cmake gcc-multilib \
+            gettext git libtool libtool-bin nasm ninja-build patch pkg-config unzip wget p7zip-full
+          # koreader-base's host meson toolchain uses `ar = 'strip'`, which newer
+          # meson (>= ~1.5) rejects; pin to the version koreader's CI image uses.
+          python -m pip install --upgrade pip
+          python -m pip install 'meson==1.4.2'
+
+      - name: Fetch third-party sources
+        run: ./kodev fetch-thirdparty
+
+      - name: Inject release signing config into the launcher
+        run: |
+          python - <<'PY'
+          import pathlib
+          p = pathlib.Path("platform/android/luajit-launcher/app/build.gradle")
+          s = p.read_text()
+          if "signingConfigs" in s:
+              print("signing config already present; skipping")
+          else:
+              block = (
+                  "    signingConfigs {\n"
+                  "        release {\n"
+                  '            storeFile file(System.getenv("KOREADER_KEYSTORE"))\n'
+                  '            storePassword System.getenv("KOREADER_KEYSTORE_PASS")\n'
+                  '            keyAlias System.getenv("KOREADER_KEY_ALIAS")\n'
+                  '            keyPassword System.getenv("KOREADER_KEY_PASS")\n'
+                  "        }\n"
+                  "    }\n\n"
+                  "    buildTypes {\n"
+                  "        release {\n"
+                  "            signingConfig signingConfigs.release\n"
+              )
+              anchor = "    buildTypes {\n        release {\n"
+              if anchor not in s:
+                  raise SystemExit("could not find release buildType anchor to inject signing config")
+              p.write_text(s.replace(anchor, block, 1))
+              print("injected signing config")
+          PY
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set"; exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build signed release
+        env:
+          KOREADER_KEYSTORE: ${{ runner.temp }}/release.jks
+          KOREADER_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KOREADER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KOREADER_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: ./kodev release "${{ inputs.target }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: koreader-${{ inputs.target }}
+          path: koreader-*.apk
+          if-no-files-found: error
