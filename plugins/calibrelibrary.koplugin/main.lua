@@ -98,6 +98,15 @@ function CalibreLibrary:addToMainMenu(menu_items)
                 callback = function(touchmenu_instance)
                     self:setLibraryDir(touchmenu_instance)
                 end,
+            },
+            {
+                -- The folder picker is very slow to navigate on some e-ink
+                -- devices; let the path be typed/pasted directly instead.
+                text = _("Enter folder path"),
+                keep_menu_open = true,
+                callback = function(touchmenu_instance)
+                    self:setLibraryDirByPath(touchmenu_instance)
+                end,
                 separator = true,
             },
             {
@@ -204,6 +213,51 @@ function CalibreLibrary:setLibraryDir(touchmenu_instance)
     }:chooseDir(self:getLibraryDir())
 end
 
+--- Fast alternative to the folder picker: type or paste the library path. The
+--- picker is painfully slow to navigate on some e-ink devices (e.g. Onyx).
+function CalibreLibrary:setLibraryDirByPath(touchmenu_instance)
+    local dialog
+    dialog = InputDialog:new{
+        title = _("Calibre library folder"),
+        input = self:getLibraryDir() or "",
+        input_hint = "/path/to/calibre/library",
+        description = _("Folder that holds metadata.db."),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        UIManager:close(dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    is_enter_default = true,
+                    callback = function()
+                        local dir = dialog:getInputText()
+                        -- Trim trailing slashes so metadata.db resolves cleanly.
+                        dir = dir and dir:gsub("/+$", "") or ""
+                        if not CalibreDB:isAvailable(dir) then
+                            UIManager:show(InfoMessage:new{
+                                text = T(_("No metadata.db found in:\n%1"), dir),
+                            })
+                            return
+                        end
+                        G_reader_settings:saveSetting(SETTING_LIBRARY_DIR, dir)
+                        UIManager:close(dialog)
+                        if touchmenu_instance then
+                            touchmenu_instance:updateItems()
+                        end
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
 -- Catalog listing. {{{
 
 function CalibreLibrary:browse()
@@ -259,14 +313,16 @@ end
 --- Querying it in place is very slow when the library is on an SD card (the
 --- per-book subqueries do many small random reads); a one-off sequential copy
 --- is far faster, and we only re-copy when the source changes.
-function CalibreLibrary:loadAllBooks(library_dir)
+--- Pass `force` to re-copy metadata.db even when the cached copy looks current
+--- (the manual "Reload library" action), so newly added books show up.
+function CalibreLibrary:loadAllBooks(library_dir, force)
     local cache_path = self:getCacheDBPath()
     local query_path = cache_path
-    if CalibreDB:needsSync(library_dir, cache_path) then
+    if force or CalibreDB:needsSync(library_dir, cache_path) then
         local info = InfoMessage:new{ text = _("Copying calibre database…") }
         UIManager:show(info)
         UIManager:forceRePaint()
-        query_path = CalibreDB:syncDatabase(library_dir, cache_path)
+        query_path = CalibreDB:syncDatabase(library_dir, cache_path, force)
         UIManager:close(info)
     end
 
@@ -309,6 +365,23 @@ function CalibreLibrary:updateCatalog()
         subtitle = T(_("%1 books"), #all_books)
     end
     self.catalog_menu:switchItemTable(_("Calibre library"), item_table, -1, nil, subtitle)
+end
+
+--- Re-read metadata.db from the library folder and refresh the open catalog,
+--- without going through the (slow) folder picker again. Forces a fresh copy of
+--- metadata.db so books added in calibre since the last load appear.
+function CalibreLibrary:reloadLibrary()
+    local library_dir = self:getLibraryDir()
+    if not CalibreDB:isAvailable(library_dir) then
+        UIManager:show(InfoMessage:new{
+            text = _("No calibre library configured. Set the library folder first."),
+        })
+        return
+    end
+    -- Keep the current filter/sort; updateCatalog re-applies them to the
+    -- freshly loaded list.
+    self.all_books = self:loadAllBooks(library_dir, true)
+    self:updateCatalog()
 end
 
 --- In-list options: filter by text and change sort order.
@@ -357,6 +430,15 @@ function CalibreLibrary:showOptions()
             },
         }
     end
+    buttons[#buttons + 1] = {
+        {
+            text = _("Reload library"),
+            callback = function()
+                UIManager:close(self.options_dialog)
+                self:reloadLibrary()
+            end,
+        },
+    }
     self.options_dialog = ButtonDialog:new{
         title = _("Catalog options"),
         buttons = buttons,
