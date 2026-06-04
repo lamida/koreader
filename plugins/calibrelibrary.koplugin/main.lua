@@ -172,7 +172,7 @@ function CalibreLibrary:getPreferredFormatMenuTable()
         table.insert(options, format)
     end
     local items = {}
-    for _, opt in ipairs(options) do
+    for _idx, opt in ipairs(options) do
         table.insert(items, {
             text = opt == "ask" and _("Ask each time") or opt,
             checked_func = function()
@@ -332,7 +332,7 @@ function CalibreLibrary:showOptions()
             },
         },
     }
-    for _, opt in ipairs(SORT_OPTIONS) do
+    for _idx, opt in ipairs(SORT_OPTIONS) do
         local is_current = self:getSortField() == opt.key
         buttons[#buttons + 1] = {
             {
