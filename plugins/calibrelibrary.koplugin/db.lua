@@ -72,6 +72,68 @@ local function parseFormats(formats_string)
     return formats
 end
 
+-- Copy a file in binary mode. Returns true on success.
+local function copyFile(src, dst)
+    local fin = io.open(src, "rb")
+    if not fin then return false end
+    local fout = io.open(dst, "wb")
+    if not fout then
+        fin:close()
+        return false
+    end
+    local ok = true
+    while true do
+        local chunk = fin:read(256 * 1024)
+        if not chunk then break end
+        if not fout:write(chunk) then
+            ok = false
+            break
+        end
+    end
+    fin:close()
+    fout:close()
+    return ok
+end
+
+--- Whether the cached working copy is missing or out of date relative to the
+--- library's metadata.db (size differs or source is newer).
+function CalibreDB:needsSync(library_dir, cache_path)
+    local src_attr = lfs.attributes(self:getDBPath(library_dir) or "")
+    if not src_attr or src_attr.mode ~= "file" then
+        return false -- nothing to sync
+    end
+    local cache_attr = lfs.attributes(cache_path or "")
+    if not cache_attr or cache_attr.mode ~= "file" then
+        return true
+    end
+    return cache_attr.size ~= src_attr.size
+        or cache_attr.modification < src_attr.modification
+end
+
+--[[--
+Copy the library's metadata.db to a fast-storage working copy.
+
+Querying SQLite directly from slow storage (e.g. an SD card on an e-ink device)
+is slow: the per-book author/format subqueries do many small random reads. A
+one-off sequential copy to internal storage, then querying the copy, is far
+faster. Re-copies only when @{needsSync} reports the copy is stale.
+
+@return the path to query (the cache on success, else the source as a fallback)
+--]]
+function CalibreDB:syncDatabase(library_dir, cache_path)
+    local src = self:getDBPath(library_dir)
+    if not src or lfs.attributes(src, "mode") ~= "file" then
+        return nil
+    end
+    if not self:needsSync(library_dir, cache_path) then
+        return cache_path
+    end
+    if copyFile(src, cache_path) then
+        return cache_path
+    end
+    return src -- copy failed; query the source directly
+end
+
 --[[--
 Read the whole catalog once.
 
@@ -80,10 +142,14 @@ e.g. mobi-only titles are hidden). The result is unsorted; callers sort with
 @{sortBooks}.
 
 @param library_dir path to the calibre library (the folder containing metadata.db)
+@param db_path optional explicit metadata.db path to query (e.g. a cached copy
+       from @{syncDatabase}); defaults to the one inside `library_dir`
 @return list of books: { id, title, path, authors, pubdate, timestamp, formats = {{format, name}, ...} }
 --]]
-function CalibreDB:queryAllBooks(library_dir)
-    if not self:isAvailable(library_dir) then
+function CalibreDB:queryAllBooks(library_dir, db_path)
+    db_path = db_path or self:getDBPath(library_dir)
+    local attr = db_path and lfs.attributes(db_path)
+    if not (attr and attr.mode == "file" and attr.size > 0) then
         return {}
     end
 
