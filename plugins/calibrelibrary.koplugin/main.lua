@@ -58,11 +58,13 @@ function CalibreLibrary:getLibraryDir()
 end
 
 function CalibreLibrary:getSortField()
-    return G_reader_settings:readSetting(SETTING_SORT_FIELD) or "title"
+    -- Default to date added so the catalog opens with the most recent books.
+    return G_reader_settings:readSetting(SETTING_SORT_FIELD) or "timestamp"
 end
 
 function CalibreLibrary:isSortAscending()
-    return G_reader_settings:nilOrTrue(SETTING_SORT_ASCENDING)
+    -- Default to descending (newest / last added on top).
+    return G_reader_settings:isTrue(SETTING_SORT_ASCENDING)
 end
 
 function CalibreLibrary:getPreferredFormat()

@@ -169,7 +169,10 @@ function CalibreDB:queryAllBooks(library_dir, db_path)
 
     local books = {}
     local ok, err = pcall(function()
-        local conn = SQ3.open(self:getDBPath(library_dir), "ro")
+        -- Query the (fast-storage) copy we were handed, not the source on slow
+        -- storage: opening the source here would defeat the metadata.db cache
+        -- and make the per-book author/format subqueries crawl.
+        local conn = SQ3.open(db_path, "ro")
         local stmt = conn:prepare(sql)
         local row = stmt:step()
         while row do
