@@ -61,6 +61,22 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install 'meson==1.4.2'
 
+      - name: Pin Android NDK r23c
+        # GitHub runners preinstall a newer NDK and set ANDROID_NDK_ROOT/HOME, but
+        # KOReader needs r23c (newer NDKs remove ALooper_pollAll, breaking the
+        # launcher). Install r23c and point the env at it for both koreader-base
+        # and Gradle.
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          # `yes |` gets a broken pipe when sdkmanager exits; don't let pipefail
+          # turn that into a step failure.
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          set -o pipefail
+          "$SDKMANAGER" "ndk;23.2.8568313" "platforms;android-30" "build-tools;34.0.0"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/23.2.8568313" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/23.2.8568313" >> "$GITHUB_ENV"
+
       - name: Fetch third-party sources
         run: ./kodev fetch-thirdparty
 

@@ -13,6 +13,7 @@ Selecting a book resolves its file and opens it in the reader.
 local BookList = require("ui/widget/booklist")
 local ButtonDialog = require("ui/widget/buttondialog")
 local CalibreDB = require("db")
+local DataStorage = require("datastorage")
 local Dispatcher = require("dispatcher")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
@@ -171,7 +172,7 @@ function CalibreLibrary:getPreferredFormatMenuTable()
         table.insert(options, format)
     end
     local items = {}
-    for _, opt in ipairs(options) do
+    for _idx, opt in ipairs(options) do
         table.insert(items, {
             text = opt == "ask" and _("Ask each time") or opt,
             checked_func = function()
@@ -247,13 +248,32 @@ function CalibreLibrary:browse()
     UIManager:show(self.catalog_menu)
 end
 
---- Read the catalog from the database, showing a loading message first so the
---- blocking read does not look like a freeze on a large library.
+function CalibreLibrary:getCacheDBPath()
+    return DataStorage:getDataDir() .. "/calibre_catalog_metadata.db"
+end
+
+--- Read the catalog from the database, showing progress first so the blocking
+--- work does not look like a freeze.
+---
+--- metadata.db is first copied to fast internal storage and queried from there.
+--- Querying it in place is very slow when the library is on an SD card (the
+--- per-book subqueries do many small random reads); a one-off sequential copy
+--- is far faster, and we only re-copy when the source changes.
 function CalibreLibrary:loadAllBooks(library_dir)
+    local cache_path = self:getCacheDBPath()
+    local query_path = cache_path
+    if CalibreDB:needsSync(library_dir, cache_path) then
+        local info = InfoMessage:new{ text = _("Copying calibre database…") }
+        UIManager:show(info)
+        UIManager:forceRePaint()
+        query_path = CalibreDB:syncDatabase(library_dir, cache_path)
+        UIManager:close(info)
+    end
+
     local info = InfoMessage:new{ text = _("Loading calibre library…") }
     UIManager:show(info)
     UIManager:forceRePaint()
-    local books = CalibreDB:queryAllBooks(library_dir)
+    local books = CalibreDB:queryAllBooks(library_dir, query_path)
     UIManager:close(info)
     return books
 end
@@ -268,8 +288,14 @@ function CalibreLibrary:updateCatalog()
 
     local item_table = {}
     for _, book in ipairs(books) do
+        local formats = {}
+        for _, f in ipairs(book.formats) do
+            table.insert(formats, f.format)
+        end
         table.insert(item_table, {
             text = T("%1 - %2", book.title, book.authors),
+            -- Right-aligned indicator of the available formats (e.g. "EPUB · PDF").
+            mandatory = table.concat(formats, " · "),
             book = book,
         })
     end
@@ -306,7 +332,7 @@ function CalibreLibrary:showOptions()
             },
         },
     }
-    for _, opt in ipairs(SORT_OPTIONS) do
+    for _idx, opt in ipairs(SORT_OPTIONS) do
         local is_current = self:getSortField() == opt.key
         buttons[#buttons + 1] = {
             {

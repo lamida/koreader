@@ -170,4 +170,23 @@ describe("Calibre library db module", function()
         local path = CalibreDB:resolveBookPath(library_dir, "Jane Roe/Alpha (1)", "Alpha - Jane Roe", "PDF")
         assert.is_nil(path) -- only the epub exists for Alpha
     end)
+
+    it("syncs metadata.db to a cache copy and queries it", function()
+        local cache_path = DataStorage:getDataDir() .. "/calibre_catalog_test_cache.db"
+        os.remove(cache_path)
+        assert.is_true(CalibreDB:needsSync(library_dir, cache_path)) -- cache missing
+        local query_path = CalibreDB:syncDatabase(library_dir, cache_path)
+        assert.are.equal(cache_path, query_path)
+        assert.are.equal("file", lfs.attributes(cache_path, "mode"))
+        -- a fresh cache should not need another sync
+        assert.is_false(CalibreDB:needsSync(library_dir, cache_path))
+        -- querying the cached copy returns the same catalog
+        local books = CalibreDB:queryAllBooks(library_dir, cache_path)
+        assert.are.equal(3, #books)
+        os.remove(cache_path)
+    end)
+
+    it("needsSync is false when there is no source database", function()
+        assert.is_false(CalibreDB:needsSync(library_dir .. "/nope", "/tmp/whatever.db"))
+    end)
 end)
