@@ -273,7 +273,10 @@ function CalibreLibrary:browse()
 
     -- Read the whole catalog once, with feedback so a large library never looks
     -- frozen. All later filtering/sorting works on this in-memory list.
-    self.search_query = nil
+    -- Restore persisted filter on first use; preserve in-memory value on re-entry.
+    if self.search_query == nil then
+        self.search_query = G_reader_settings:readSetting("calibrelibrary_search_query")
+    end
     self.all_books = self:loadAllBooks(library_dir)
 
     self.catalog_menu = BookList:new{
@@ -427,6 +430,7 @@ function CalibreLibrary:showOptions()
                 callback = function()
                     UIManager:close(self.options_dialog)
                     self.search_query = nil
+                    G_reader_settings:saveSetting("calibrelibrary_search_query", nil)
                     self:updateCatalog()
                 end,
             },
@@ -451,7 +455,7 @@ end
 function CalibreLibrary:showSearchDialog()
     local dialog
     dialog = InputDialog:new{
-        title = _("Filter by title or author"),
+        title = _("Filter by title, author or tag"),
         input = self.search_query or "",
         buttons = {
             {
@@ -463,11 +467,22 @@ function CalibreLibrary:showSearchDialog()
                     end,
                 },
                 {
+                    text = _("Clear"),
+                    callback = function()
+                        dialog:setInputText("")
+                        self.search_query = nil
+                        G_reader_settings:saveSetting("calibrelibrary_search_query", nil)
+                        UIManager:close(dialog)
+                        self:updateCatalog()
+                    end,
+                },
+                {
                     text = _("Filter"),
                     is_enter_default = true,
                     callback = function()
                         local query = dialog:getInputText()
                         self.search_query = query ~= "" and query or nil
+                        G_reader_settings:saveSetting("calibrelibrary_search_query", self.search_query)
                         UIManager:close(dialog)
                         self:updateCatalog()
                     end,
