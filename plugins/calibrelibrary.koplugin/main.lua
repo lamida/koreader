@@ -80,7 +80,7 @@ end
 
 function CalibreLibrary:addToMainMenu(menu_items)
     menu_items.calibre_catalog = {
-        text = _("Calibre library"),
+        text = _("Calibre+"),
         sub_item_table = {
             {
                 text = _("Browse library"),
