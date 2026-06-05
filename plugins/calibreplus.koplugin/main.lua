@@ -281,7 +281,7 @@ function CalibreLibrary:browse()
 
     self.catalog_menu = BookList:new{
         name = "calibre_catalog",
-        title = _("Calibre library"),
+        title = _("Calibre+"),
         title_bar_left_icon = "appbar.search",
         onLeftButtonTap = function()
             self:showOptions()
@@ -369,7 +369,7 @@ function CalibreLibrary:updateCatalog()
     else
         subtitle = T(_("%1 books"), #all_books)
     end
-    self.catalog_menu:switchItemTable(_("Calibre library"), item_table, -1, nil, subtitle)
+    self.catalog_menu:switchItemTable(_("Calibre+"), item_table, -1, nil, subtitle)
 end
 
 --- Re-read metadata.db from the library folder and refresh the open catalog,
@@ -501,13 +501,54 @@ function CalibreLibrary:onBookHold(item)
     for _, f in ipairs(book.formats) do
         table.insert(formats, f.format)
     end
-    local tags = book.tags and book.tags ~= "" and book.tags:gsub("|", ", ") or _("None")
+
     local pubdate = book.pubdate and book.pubdate:match("^(%d%d%d%d%-%d%d%-%d%d)") or _("Unknown")
-    UIManager:show(InfoMessage:new{
-        text = T(_("Title: %1\nAuthor(s): %2\nTags: %3\nPublished: %4\nFormats: %5\nPath: %6"),
-            book.title, book.authors, tags, pubdate,
-            table.concat(formats, ", "), book.path),
+    local info = T(_("Title: %1\nAuthor(s): %2\nPublished: %3\nFormats: %4\nPath: %5"),
+        book.title, book.authors, pubdate, table.concat(formats, ", "), book.path)
+
+    local tags_list = {}
+    if book.tags and book.tags ~= "" then
+        for tag in book.tags:gmatch("[^|]+") do
+            tag = tag:match("^%s*(.-)%s*$")
+            if tag ~= "" then
+                table.insert(tags_list, tag)
+            end
+        end
+    end
+
+    local buttons = {}
+    if #tags_list > 0 then
+        info = info .. "\n" .. T(_("Tags (tap to filter):"))
+        for _, tag in ipairs(tags_list) do
+            local t = tag
+            table.insert(buttons, {
+                {
+                    text = t,
+                    callback = function()
+                        UIManager:close(self.book_hold_dialog)
+                        self.search_query = t
+                        G_reader_settings:saveSetting("calibreplus_search_query", t)
+                        self:updateCatalog()
+                    end,
+                },
+            })
+        end
+    end
+
+    table.insert(buttons, {
+        {
+            text = _("Close"),
+            callback = function()
+                UIManager:close(self.book_hold_dialog)
+            end,
+        },
     })
+
+    self.book_hold_dialog = ButtonDialog:new{
+        title = info,
+        buttons = buttons,
+    }
+    UIManager:show(self.book_hold_dialog)
     return true
 end
 
