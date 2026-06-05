@@ -104,7 +104,14 @@ common_info.report_bug = {
     end
 }
 common_info.version = {
-    text = T(_("Version: %1"), Version:getShortVersion()),
+    text_func = function()
+        local _, commit = Version:getNormalizedCurrentVersion()
+        local label = Version:getShortVersion()
+        if commit and commit ~= "" then
+            label = label .. " (" .. commit .. ")"
+        end
+        return T(_("Version: %1"), label)
+    end,
     keep_menu_open = true,
     callback = function()
         UIManager:show(InfoMessage:new{
