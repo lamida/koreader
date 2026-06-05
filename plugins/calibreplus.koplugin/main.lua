@@ -7,7 +7,7 @@ search, it points at a calibre library folder on disk (the one holding
 metadata.db plus the per-author/title subfolders) and lists the whole catalog.
 Selecting a book resolves its file and opens it in the reader.
 
-@module koplugin.calibrelibrary
+@module koplugin.calibreplus
 --]]
 
 local BookList = require("ui/widget/booklist")
@@ -37,7 +37,7 @@ local SORT_OPTIONS = {
 }
 
 local CalibreLibrary = WidgetContainer:extend{
-    name = "calibrelibrary",
+    name = "calibreplus",
     is_doc_only = false,
 }
 
@@ -275,7 +275,7 @@ function CalibreLibrary:browse()
     -- frozen. All later filtering/sorting works on this in-memory list.
     -- Restore persisted filter on first use; preserve in-memory value on re-entry.
     if self.search_query == nil then
-        self.search_query = G_reader_settings:readSetting("calibrelibrary_search_query")
+        self.search_query = G_reader_settings:readSetting("calibreplus_search_query")
     end
     self.all_books = self:loadAllBooks(library_dir)
 
@@ -430,7 +430,7 @@ function CalibreLibrary:showOptions()
                 callback = function()
                     UIManager:close(self.options_dialog)
                     self.search_query = nil
-                    G_reader_settings:saveSetting("calibrelibrary_search_query", nil)
+                    G_reader_settings:saveSetting("calibreplus_search_query", nil)
                     self:updateCatalog()
                 end,
             },
@@ -471,7 +471,7 @@ function CalibreLibrary:showSearchDialog()
                     callback = function()
                         dialog:setInputText("")
                         self.search_query = nil
-                        G_reader_settings:saveSetting("calibrelibrary_search_query", nil)
+                        G_reader_settings:saveSetting("calibreplus_search_query", nil)
                         UIManager:close(dialog)
                         self:updateCatalog()
                     end,
@@ -482,7 +482,7 @@ function CalibreLibrary:showSearchDialog()
                     callback = function()
                         local query = dialog:getInputText()
                         self.search_query = query ~= "" and query or nil
-                        G_reader_settings:saveSetting("calibrelibrary_search_query", self.search_query)
+                        G_reader_settings:saveSetting("calibreplus_search_query", self.search_query)
                         UIManager:close(dialog)
                         self:updateCatalog()
                     end,
@@ -501,9 +501,12 @@ function CalibreLibrary:onBookHold(item)
     for _, f in ipairs(book.formats) do
         table.insert(formats, f.format)
     end
+    local tags = book.tags and book.tags ~= "" and book.tags:gsub("|", ", ") or _("None")
+    local pubdate = book.pubdate and book.pubdate:match("^(%d%d%d%d%-%d%d%-%d%d)") or _("Unknown")
     UIManager:show(InfoMessage:new{
-        text = T(_("Title: %1\nAuthor(s): %2\nFormats: %3\nPath: %4"),
-            book.title, book.authors, table.concat(formats, ", "), book.path),
+        text = T(_("Title: %1\nAuthor(s): %2\nTags: %3\nPublished: %4\nFormats: %5\nPath: %6"),
+            book.title, book.authors, tags, pubdate,
+            table.concat(formats, ", "), book.path),
     })
     return true
 end
