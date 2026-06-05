@@ -190,10 +190,6 @@ local CalibreSearch = WidgetContainer:extend{
 }
 
 function CalibreSearch:ShowSearch()
-    -- restore persisted query on first run after app restart
-    if self.search_value == nil then
-        self.search_value = G_reader_settings:readSetting("calibre_search_last_query") or ""
-    end
     self.search_dialog = InputDialog:new{
         title = _("Calibre metadata search"),
         input = self.search_value,
@@ -249,23 +245,11 @@ function CalibreSearch:ShowSearch()
                     end,
                 },
                 {
-                    text = _("Clear"),
-                    id = "clear",
-                    enabled = true,
-                    callback = function()
-                        self.search_dialog:setInputText("")
-                        self.search_value = ""
-                        G_reader_settings:saveSetting("calibre_search_last_query", nil)
-                    end,
-                },
-                {
                     -- @translators Search for books in calibre Library, via on-device metadata (as setup by Calibre's 'Send To Device').
                     text = _("Search books"),
                     enabled = true,
                     callback = function()
                         self.search_value = self.search_dialog:getInputText()
-                        G_reader_settings:saveSetting("calibre_search_last_query",
-                            self.search_value ~= "" and self.search_value or nil)
                         self.lastsearch = "find"
                         self:close()
                     end,
@@ -420,30 +404,10 @@ function CalibreSearch:findBooks(query)
         end
         return false
     end
-    -- parse tag:xxx tokens from query; remainder is free-text
-    local tag_filters = {}
-    local free_text = query:gsub("tag:(%S+)", function(v)
-        table.insert(tag_filters, v)
-        return ""
-    end)
-    free_text = free_text:match("^%s*(.-)%s*$")
-    -- all tag:xxx filters must match at least one of the book's tags
-    local function tagFiltersMatch(book)
-        for _, tf in ipairs(tag_filters) do
-            local found = false
-            for _, tag in ipairs(book.tags) do
-                if bookMatch(tag, tf) then found = true; break end
-            end
-            if not found then return false end
-        end
-        return true
-    end
     -- performs a book search
     local results = {}
-    for _, book in ipairs(self.books) do
-        local tag_ok = tagFiltersMatch(book)
-        local text_ok = free_text == "" or bookSearch(book, free_text)
-        if tag_ok and text_ok then
+    for i, book in ipairs(self.books) do
+        if bookSearch(book, query) then
             table.insert(results, #results + 1, book)
         end
     end
@@ -495,17 +459,10 @@ function CalibreSearch:browse(option)
     }
     self.search_menu.paths = {}
     self.search_menu.onReturn = function ()
-        if #self.search_menu.paths == 0 then
-            -- already at root level: back opens the search dialog
-            UIManager:close(self.search_menu)
-            self.search_menu = nil
-            CalibreSearch:ShowSearch()
-            return
-        end
         local path_entry = table.remove(self.search_menu.paths)
         local page = path_entry and path_entry.page or 1
         if #self.search_menu.paths < 1 then
-            -- nothing left in paths: return to the root results list
+            -- If nothing is left in paths we switch to original items and title
             self.search_menu.paths = {}
             self:switchResults(menu_entries, name, false, page)
         end
