@@ -26,7 +26,15 @@ local Calibre = WidgetContainer:extend{
 }
 
 function Calibre:onCalibreSearch()
-    CalibreSearch:ShowSearch()
+    -- restore persisted query on first run after app restart
+    if CalibreSearch.search_value == nil then
+        CalibreSearch.search_value = G_reader_settings:readSetting("calibre_search_last_query") or ""
+    end
+    if CalibreSearch.search_value ~= "" then
+        CalibreSearch:find("find")
+    else
+        CalibreSearch:ShowSearch()
+    end
     return true
 end
 

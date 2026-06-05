@@ -190,6 +190,10 @@ local CalibreSearch = WidgetContainer:extend{
 }
 
 function CalibreSearch:ShowSearch()
+    -- restore persisted query on first run after app restart
+    if self.search_value == nil then
+        self.search_value = G_reader_settings:readSetting("calibre_search_last_query") or ""
+    end
     self.search_dialog = InputDialog:new{
         title = _("Calibre metadata search"),
         input = self.search_value,
@@ -245,11 +249,23 @@ function CalibreSearch:ShowSearch()
                     end,
                 },
                 {
+                    text = _("Clear"),
+                    id = "clear",
+                    enabled = true,
+                    callback = function()
+                        self.search_dialog:setInputText("")
+                        self.search_value = ""
+                        G_reader_settings:saveSetting("calibre_search_last_query", nil)
+                    end,
+                },
+                {
                     -- @translators Search for books in calibre Library, via on-device metadata (as setup by Calibre's 'Send To Device').
                     text = _("Search books"),
                     enabled = true,
                     callback = function()
                         self.search_value = self.search_dialog:getInputText()
+                        G_reader_settings:saveSetting("calibre_search_last_query",
+                            self.search_value ~= "" and self.search_value or nil)
                         self.lastsearch = "find"
                         self:close()
                     end,
@@ -479,10 +495,17 @@ function CalibreSearch:browse(option)
     }
     self.search_menu.paths = {}
     self.search_menu.onReturn = function ()
+        if #self.search_menu.paths == 0 then
+            -- already at root level: back opens the search dialog
+            UIManager:close(self.search_menu)
+            self.search_menu = nil
+            CalibreSearch:ShowSearch()
+            return
+        end
         local path_entry = table.remove(self.search_menu.paths)
         local page = path_entry and path_entry.page or 1
         if #self.search_menu.paths < 1 then
-            -- If nothing is left in paths we switch to original items and title
+            -- nothing left in paths: return to the root results list
             self.search_menu.paths = {}
             self:switchResults(menu_entries, name, false, page)
         end
