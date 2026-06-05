@@ -526,8 +526,8 @@ function CalibreLibrary:onBookHold(item)
                     text = t,
                     callback = function()
                         UIManager:close(self.book_hold_dialog)
-                        self.search_query = t
-                        G_reader_settings:saveSetting("calibreplus_search_query", t)
+                        self.search_query = "tag:" .. t
+                        G_reader_settings:saveSetting("calibreplus_search_query", "tag:" .. t)
                         self:updateCatalog()
                     end,
                 },
