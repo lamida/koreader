@@ -105,9 +105,10 @@ common_info.report_bug = {
 }
 common_info.version = {
     text_func = function()
-        local _, commit = Version:getNormalizedCurrentVersion()
+        local rev = Version:getCurrentRevision() or ""
+        local commit = rev:match("-g(%x+)")
         local label = Version:getShortVersion()
-        if commit and commit ~= "" then
+        if commit then
             label = label .. " (" .. commit .. ")"
         end
         return T(_("Version: %1"), label)
