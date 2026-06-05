@@ -175,8 +175,8 @@ local order = {
     },
     tools = {
         "read_timer",
-        "calibre",
         "calibre_catalog",
+        "calibre",
         "exporter",
         "statistics",
         "progress_sync",
