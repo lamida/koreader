@@ -404,10 +404,30 @@ function CalibreSearch:findBooks(query)
         end
         return false
     end
+    -- parse tag:xxx tokens from query; remainder is free-text
+    local tag_filters = {}
+    local free_text = query:gsub("tag:(%S+)", function(v)
+        table.insert(tag_filters, v)
+        return ""
+    end)
+    free_text = free_text:match("^%s*(.-)%s*$")
+    -- all tag:xxx filters must match at least one of the book's tags
+    local function tagFiltersMatch(book)
+        for _, tf in ipairs(tag_filters) do
+            local found = false
+            for _, tag in ipairs(book.tags) do
+                if bookMatch(tag, tf) then found = true; break end
+            end
+            if not found then return false end
+        end
+        return true
+    end
     -- performs a book search
     local results = {}
-    for i, book in ipairs(self.books) do
-        if bookSearch(book, query) then
+    for _, book in ipairs(self.books) do
+        local tag_ok = tagFiltersMatch(book)
+        local text_ok = free_text == "" or bookSearch(book, free_text)
+        if tag_ok and text_ok then
             table.insert(results, #results + 1, book)
         end
     end
