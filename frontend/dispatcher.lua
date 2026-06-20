@@ -33,11 +33,13 @@ local KoptOptions = require("ui/data/koptoptions")
 local Device = require("device")
 local Event = require("ui/event")
 local FileManager = require("apps/filemanager/filemanager")
+local Key = require("device/key")
 local Notification = require("ui/widget/notification")
 local ReaderDictionary = require("apps/reader/modules/readerdictionary")
 local ReaderFooter = require("apps/reader/modules/readerfooter")
 local ReaderHighlight = require("apps/reader/modules/readerhighlight")
 local ReaderTypography = require("apps/reader/modules/readertypography")
+local ReaderView = require("apps/reader/modules/readerview")
 local ReaderZooming = require("apps/reader/modules/readerzooming")
 local Screen = Device.screen
 local UIManager = require("ui/uimanager")
@@ -222,6 +224,9 @@ local settingsList = {
     set_highlight_action = {category="string", event="SetHighlightAction", title=_("Set highlight action"), args_func=ReaderHighlight.getHighlightActions, reader=true},
     cycle_highlight_action = {category="none", event="CycleHighlightAction", title=_("Cycle highlight action"), reader=true},
     cycle_highlight_style = {category="none", event="CycleHighlightStyle", title=_("Cycle highlight style"), reader=true, separator=true},
+    ----
+    set_overlap_style = {category="string", event="SetOverlapStyle", title=_("Set page overlap style"), args_func=ReaderView.getOverlapStyles, reader=true},
+    cycle_overlap_style = {category="none", event="CycleOverlapStyle", title=_("Cycle page overlap style"), reader=true, separator=true},
     ----
     flush_settings = {category="none", event="FlushSettings", arg=true, title=_("Save book metadata"), reader=true, separator=true},
     ----
@@ -482,6 +487,9 @@ local dispatcher_menu_order = {
     "set_highlight_action",
     "cycle_highlight_action",
     "cycle_highlight_style",
+    ----
+    "set_overlap_style",
+    "cycle_overlap_style",
     ----
     "flush_settings",
     ----
@@ -1327,6 +1335,10 @@ function Dispatcher:execute(settings, exec_props)
                 -- the event can accept a gesture object or a number
                 arg = v ~= 0 and v or gesture or 0
                 UIManager:sendEvent(Event:new(event, arg))
+            elseif category == "key" then
+                local key = Key:new(arg, {})
+                UIManager:sendEvent(Event:new("KeyPress", key))
+                UIManager:sendEvent(Event:new("KeyRelease", key))
             end
         end
     end
